@@ -1,0 +1,12 @@
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 本地服务器产物（本项目为纯前端，正常不会产生）
+*.log

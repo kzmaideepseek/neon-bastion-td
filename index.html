@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>星际防线 TD · NEON BASTION</title>
+<link rel="stylesheet" href="main.css">
+</head>
+<body>
+<div id="bg-grid" aria-hidden="true"></div>
+<div id="bg-glow" aria-hidden="true"></div>
+<div id="scanlines" aria-hidden="true"></div>
+
+<div id="app">
+
+  <!-- ============ BOOT ============ -->
+  <section id="scr-boot" class="screen active">
+    <div class="boot-box">
+      <div class="boot-logo">
+        <span class="logo-cn">星际防线</span>
+        <span class="logo-en">NEON BASTION</span>
+      </div>
+      <div class="boot-log" id="bootLog"></div>
+      <button class="btn btn-primary btn-lg" id="btnBoot">点击接入系统</button>
+      <div class="boot-tip">建议开启音效 · 首次进入需点击以解锁音频</div>
+    </div>
+  </section>
+
+  <!-- ============ MENU ============ -->
+  <section id="scr-menu" class="screen">
+    <div class="menu-wrap">
+      <header class="menu-head">
+        <h1 class="logo-cn">星际防线</h1>
+        <p class="logo-en">NEON BASTION · TOWER DEFENSE</p>
+      </header>
+      <div class="menu-stats" id="menuStats"></div>
+      <nav class="menu-nav">
+        <button class="btn btn-primary btn-lg" id="btnPlay"><span class="btn-ico">▶</span>开始防御</button>
+        <button class="btn btn-lg btn-endless" id="btnEndless"><span class="btn-ico">∞</span>无尽模式</button>
+        <button class="btn" id="btnShop"><span class="btn-ico">◈</span>军械商城</button>
+        <button class="btn" id="btnProgress"><span class="btn-ico">◉</span>战区进度</button>
+        <button class="btn" id="btnSettings"><span class="btn-ico">⚙</span>系统设置</button>
+      </nav>
+      <footer class="menu-foot">
+        <span id="menuFootInfo"></span>
+      </footer>
+    </div>
+  </section>
+
+  <!-- ============ SETUP：开局配置 ============ -->
+  <section id="scr-setup" class="screen">
+    <div class="panel panel-wide">
+      <div class="panel-head">
+        <h2 class="panel-title" id="setupTitle">作战配置</h2>
+        <div class="panel-head-right">
+          <span class="pill pill-cy" id="setupLevel">战区 01</span>
+          <button class="btn btn-sm" data-back>返回</button>
+        </div>
+      </div>
+      <div class="tab-body setup-body">
+        <div class="setup-cols">
+          <!-- 左：地图选择 -->
+          <div class="setup-col">
+            <div class="prog-title">■ 选择地图</div>
+            <div class="map-grid" id="mapGrid"></div>
+            <div class="variant-row hidden" id="variantRow"></div>
+          </div>
+          <!-- 右：难度选择 -->
+          <div class="setup-col">
+            <div class="prog-title">■ 选择难度</div>
+            <div class="diff-list" id="diffList"></div>
+          </div>
+        </div>
+        <div class="setup-foot">
+          <div class="setup-preview" id="setupPreview"></div>
+          <div class="setup-acts">
+            <button class="btn btn-lg hidden" id="btnLoadSave">读取存档</button>
+            <button class="btn btn-primary btn-lg" id="btnStartBattle">开始防御 ▶</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LEVELS ============ -->
+  <section id="scr-levels" class="screen">
+    <div class="panel panel-wide">
+      <div class="panel-head">
+        <h2 class="panel-title">战区选择</h2>
+        <div class="panel-head-right">
+          <span class="pill" id="lvStarsSum">★ 0 / 0</span>
+          <button class="btn btn-sm" data-back>返回</button>
+        </div>
+      </div>
+      <div class="lv-layout">
+        <aside class="lv-side" id="lvGrid"></aside>
+        <div class="lv-detail" id="lvDetail"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SHOP ============ -->
+  <section id="scr-shop" class="screen">
+    <div class="panel panel-wide">
+      <div class="panel-head">
+        <h2 class="panel-title">军械商城</h2>
+        <div class="panel-head-right">
+          <span class="pill pill-gold" id="shopCores">◈ 0</span>
+          <button class="btn btn-sm" data-back>返回</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="towers">炮塔授权</button>
+        <button class="tab" data-tab="talents">指挥官天赋</button>
+      </div>
+      <div class="tab-body" id="shopBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ PROGRESS ============ -->
+  <section id="scr-progress" class="screen">
+    <div class="panel panel-wide">
+      <div class="panel-head">
+        <h2 class="panel-title">战区进度</h2>
+        <div class="panel-head-right"><button class="btn btn-sm" data-back>返回</button></div>
+      </div>
+      <div class="tab-body" id="progressBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="scr-settings" class="screen">
+    <div class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">系统设置</h2>
+        <div class="panel-head-right"><button class="btn btn-sm" data-back>返回</button></div>
+      </div>
+      <div class="tab-body" id="settingsBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ GAME ============ -->
+  <section id="scr-game" class="screen">
+    <div id="game-shell">
+
+      <header id="hud">
+        <div class="hud-left">
+          <button class="btn btn-sm btn-ghost" id="btnQuit">◀ 撤退</button>
+          <div class="hud-level">
+            <span class="hud-level-no" id="hudLevelNo">01</span>
+            <span class="hud-level-name" id="hudLevelName">边境哨站</span>
+            <span class="hud-diff" id="hudDiff">标准</span>
+            <span class="hud-diff hidden" id="hudSpawns" title="已打通的敌人入口数（每个额外入口使每波资金 +20%）">入口 ×1</span>
+          </div>
+        </div>
+
+        <div class="hud-center">
+          <div class="res res-life" title="基地完整度">
+            <span class="res-ico">◈</span>
+            <span class="res-val" id="hudLives">20</span>
+            <div class="res-bar"><i id="hudLivesBar"></i></div>
+          </div>
+          <div class="res res-gold" title="战场资金">
+            <span class="res-ico">⬢</span>
+            <span class="res-val" id="hudGold">0</span>
+          </div>
+          <div class="res res-wave" title="波次">
+            <span class="res-ico">≋</span>
+            <span class="res-val" id="hudWaveTxt">第 0 波</span>
+          </div>
+        </div>
+
+        <div class="hud-right">
+          <div class="perf-notice hidden" id="perfNotice"></div>
+          <div class="fps-box" id="fpsBox" title="实时帧率 · 点击可在 自动 / 高 / 中 / 低 之间切换">
+            <span class="fps-num" id="fpsNum">60</span>
+            <span class="fps-unit">FPS</span>
+            <span class="fps-q" id="fpsQ">自动·高</span>
+          </div>
+          <button class="btn btn-sm hidden" id="btnSave" title="保存无尽进度">💾 保存</button>
+          <button class="btn btn-sm hidden" id="btnRewind" title="逆转：回到 5 分钟内的任意时间">⏪ 逆转</button>
+          <button class="btn btn-sm" id="btnSpeed">1×</button>
+          <button class="btn btn-sm" id="btnPause">暂停</button>
+        </div>
+      </header>
+
+      <div id="game-main">
+        <!-- 左侧建造栏：竖向滚动 -->
+        <aside id="buildbar"></aside>
+
+        <div id="stage-wrap">
+          <canvas id="stage"></canvas>
+          <div id="side-panel" class="side-panel hidden"></div>
+
+          <div id="wave-banner" class="wave-banner hidden">
+            <div class="wb-sub">WAVE</div>
+            <div class="wb-num" id="wbNum">1</div>
+            <div class="wb-name" id="wbName">侦察波</div>
+          </div>
+
+          <div id="nextwave-box" class="nextwave-box hidden">
+            <div class="nw-txt">下一波 <b id="nwTimer">5.0</b>s</div>
+            <button class="btn btn-sm btn-primary" id="btnNextWave">立即出击 <span id="nwBonus">+0</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 模态层 / 提示层：必须在 #app 根级。
+       若放在 #scr-game 内，非游戏界面（display:none）时弹窗将不可见。 -->
+  <div id="toast-layer"></div>
+  <div id="modal-layer" class="modal-layer hidden">
+    <div class="modal" id="modalBox"></div>
+  </div>
+
+</div>
+
+<script src="utils.js"></script>
+<script src="storage.js"></script>
+<script src="audio.js"></script>
+<script src="config.js"></script>
+<script src="path.js"></script>
+<script src="particles.js"></script>
+<script src="entities.js"></script>
+<script src="waves.js"></script>
+<script src="render.js"></script>
+<script src="game.js"></script>
+<script src="hud.js"></script>
+<script src="sidepanel.js"></script>
+<script src="buildbar.js"></script>
+<script src="shop.js"></script>
+<script src="levels.js"></script>
+<script src="progress.js"></script>
+<script src="settings.js"></script>
+<script src="setup.js"></script>
+<script src="saves.js"></script>
+<script src="router.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
