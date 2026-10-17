@@ -225,9 +225,11 @@
       }
     }
 
-    /* BOSS 波：霸主 x N + 混编护卫 + 维修护航 */
+    /* BOSS 波：霸主 x N + 混编护卫 + 维修护航
+       bossN 按 1 基波号计算：第 10~21 波 1 头，第 22 波起 2 头，第 44 波起 3 头。
+       原先用 0 基 idx 直接除，导致第 22 波仍只刷 1 头、实际第 23 波才变 2 头，与说明差一波。 */
     if (isBoss) {
-      var bossN = 1 + Math.floor(idx / 22);
+      var bossN = 1 + Math.floor((idx + 1) / 22);
       for (var b2 = 0; b2 < bossN; b2++) {
         entries.push({ type: 'overlord', delay: 0.2 + b2 * 5.5, elite: 1 });
       }

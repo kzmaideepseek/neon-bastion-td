@@ -228,8 +228,29 @@
     if (slot) restoreState(st, slot);
 
     NB.Audio.playMusic('battle');
+    /* 每局重置交互模式。原先这三行 + 下面五行业务代码散落在函数尾部的
+       错位缩进段里，且 syncModeClass / G.moveMode / G.toggleMoveMode 曾被误嵌进
+       本函数体内，导致每次开局都重复定义一遍 —— 现已移到模块级（见下方独立段落）。 */
     G.shovelMode = false;
-    /* 模式 -> CSS class 同步（光标与边框辉光由 CSS 负责，开销极低） */
+    G.stackMode = false;
+    G.moveMode = false;
+    G.buildType = null;
+    /* 清掉上一局可能残留的模式 class */
+    if (canvas) {
+      canvas.classList.remove('shovel-mode');
+      canvas.classList.remove('stack-mode');
+      canvas.classList.remove('build-mode');
+    }
+    NB.UI.buildBarRender();
+    NB.UI.hudSync();
+    NB.UI.nextWaveShow(st);
+    resize();
+    return st;
+  };
+
+  /* ============================================================
+     模式 -> CSS class 同步（光标与边框辉光由 CSS 负责，开销极低）
+     ============================================================ */
   var wrapEl = null;
   function syncModeClass() {
     if (!canvas) return;
@@ -253,7 +274,10 @@
   }
   G.syncModeClass = syncModeClass;
 
+  /* 交互模式状态：模块级，只初始化一次（原先写在 G.start 内） */
   G.moveMode = false;
+  G.stackMode = false;
+  G.shovelMode = false;
 
   /* 进入/退出「转移模式」：选中空中单位后，顶栏/侧栏按钮或 R 键切换。
      开启后鼠标悬停任意格都会显示可落点判定与落点预览。 */
@@ -279,16 +303,6 @@
     syncModeClass();
     NB.UI.buildBarRender();
     return G.moveMode;
-  };
-
-  G.stackMode = false;
-    canvas.classList.remove('shovel-mode');
-    canvas.classList.remove('stack-mode');
-    NB.UI.buildBarRender();
-    NB.UI.hudSync();
-    NB.UI.nextWaveShow(st);
-    resize();
-    return st;
   };
 
   /* 无尽模式合成关卡（闯关的 LEVELS 不适用） */
@@ -551,8 +565,15 @@
     /* --- 炮塔 --- */
     for (i = 0; i < st.towers.length; i++) {
       var tw2 = st.towers[i];
-      /* 应用信标加成 */
-      tw2._bonus = (tw2._bd > 0) ? { dmg: tw2._bd, rate: tw2._br } : null;
+      /* 应用信标加成：只在加成值真正变化时才换对象，
+         否则上百座塔每帧各新建一个对象，纯 GC 压力。 */
+      if (tw2._bd > 0) {
+        if (!tw2._bonus || tw2._bonus.dmg !== tw2._bd || tw2._bonus.rate !== tw2._br) {
+          tw2._bonus = { dmg: tw2._bd, rate: tw2._br };
+        }
+      } else if (tw2._bonus) {
+        tw2._bonus = null;
+      }
       tw2.update(dt, st.enemies);
     }
 
@@ -915,7 +936,11 @@
           type: e.type, hp: e.hp, maxHp: e.maxHp, dist: e.dist,
           slowT: e.slowT, slowF: e.slowF, stunT: e.stunT,
           dotT: e.dotT, dotDmg: e.dotDmg, shield: e.shield || 0, gold: e.gold,
-          pathIdx: e.pathIdx
+          pathIdx: e.pathIdx,
+          /* 攻击型敌人的追击状态：不存则读档后瞬间丢失目标重新索敌，
+             与「完全复原」的承诺不符（存档里存索引，恢复时按索引回填） */
+          atkT: e.attackTarget ? st.enemies.indexOf(e.attackTarget) : -1,
+          atkCdT: e.atkCdT || 0, attackCdT: e.attackCdT || 0, atkWind: e.atkWind || 0
         };
       }),
       towers: st.towers.map(function (t) {
@@ -929,8 +954,12 @@
       speed: st.speed,
       activeSpawns: st.activeSpawns.slice(),
       stacked: Object.keys(st.stacked),
+      /* src 存塔在 st.towers 里的索引：恢复后重新指向，命中才能计入伤害/击杀统计 */
       strikes: st.strikes.map(function (sk) {
-        return { x: sk.x, y: sk.y, t: sk.t, dmg: sk.dmg, blast: sk.blast, blastDmg: sk.blastDmg };
+        return {
+          x: sk.x, y: sk.y, t: sk.t, dmg: sk.dmg, blast: sk.blast, blastDmg: sk.blastDmg,
+          src: sk.src ? st.towers.indexOf(sk.src) : -1
+        };
       })
     };
   }
@@ -948,9 +977,12 @@
     st.stacked = {};
     (d.stacked || []).forEach(function (k) { st.stacked[k] = true; });
     st._beaconSig = null;
+    /* 先建塔再回填 strikes.src：飞行中的轨道轰炸/导弹命中要计入炮塔统计 */
+    var _restoredTowers = null;
     st.strikes = (d.strikes || []).map(function (sk) {
       return { x: sk.x, y: sk.y, t: sk.t, dmg: sk.dmg, blast: sk.blast, blastDmg: sk.blastDmg, color: '#ff6b9d', src: null };
     });
+    st._pendingStrikeSrc = (d.strikes || []).map(function (sk) { return sk.src; });
     st.lives = d.lives != null ? d.lives : st.lives;
     st.maxLives = d.maxLives != null ? d.maxLives : st.maxLives;
     st.kills = d.kills || 0;
@@ -958,10 +990,25 @@
     st.playTime = d.playTime || 0;
     st.speed = d.speed || 1;
 
-    /* 波表：按存档波号确定性重建，当前波对齐 */
+    /* 波表：按存档波号确定性重建，当前波对齐。
+       绝对波号 waveNo 是 1 基（startWave 里从 0 自增到 1），
+       而 buildEndless 的 fromIdx 是 0 基索引 —— 直接传 waveNo 会整体偏一波，
+       且 waveIndex 恒为 -1 会让「波中存档」清波后从第 1 波重开。
+       正确做法：waveIndex 对齐到 waveNo-1，波表从该索引开始生成。 */
     st.waveNo = d.waveNo || 0;
-    st.waveIndex = -1;
-    st.waves = Waves.buildEndless(st.waveNo, C.ENDLESS.batchSize, st.difficulty.key);
+    if (st.endless) {
+      if (st.waveNo > 0) {
+        st.waveIndex = st.waveNo - 1;
+        st.waves = Waves.buildEndless(st.waveIndex, C.ENDLESS.batchSize, st.difficulty.key);
+      } else {
+        /* 还没开始过任何波：保持 -1，主循环靠它触发首发 */
+        st.waveIndex = -1;
+        st.waves = Waves.buildEndless(0, C.ENDLESS.batchSize, st.difficulty.key);
+      }
+    } else {
+      st.waveIndex = -1;
+      st.waves = st.level.waves;
+    }
 
     /* 炮塔复原 */
     (d.towers || []).forEach(function (ts) {
@@ -974,6 +1021,14 @@
       tw.hp = Math.min(tw.maxHp, ts.hp != null ? ts.hp : tw.maxHp);
       st.towers.push(tw);
     });
+    /* 塔已就位，把飞行中的打击效果重新挂回所属炮塔（否则伤害不计入统计） */
+    if (st._pendingStrikeSrc) {
+      for (var si = 0; si < st.strikes.length; si++) {
+        var ti = st._pendingStrikeSrc[si];
+        if (ti != null && ti >= 0 && ti < st.towers.length) st.strikes[si].src = st.towers[ti];
+      }
+      st._pendingStrikeSrc = null;
+    }
 
     /* 敌人与波内进度复原 */
     st.waveActive = !!d.waveActive;
@@ -995,11 +1050,24 @@
       e.shield = es.shield || 0;
       if (es.gold) e.gold = es.gold;
       e.pathIdx = (es.pathIdx != null && st.activeSpawns.indexOf(es.pathIdx) >= 0) ? es.pathIdx : 0;
+      e.atkCdT = es.atkCdT || 0;
+      e.attackCdT = es.attackCdT || 0;
+      e.atkWind = es.atkWind || 0;
+      e._atkT = es.atkT != null ? es.atkT : -1;   /* 暂存，第二趟回填 */
       e.pathTotal = P.pathTotal(st.map, e.pathIdx);
       var p = P.posAt(st.map, e.dist, e.pathIdx);
       e.x = p.x; e.y = p.y; e.ang = p.ang;
       st.enemies.push(e);
     });
+    /* 第二趟：所有敌人都已入列，按快照索引回填追击目标。
+       必须分两趟 —— 目标可能排在本敌人之后，第一趟时还没 push。 */
+    for (var ei = 0; ei < st.enemies.length; ei++) {
+      var te = st.enemies[ei];
+      if (te._atkT != null && te._atkT >= 0 && te._atkT < st.enemies.length) {
+        te.attackTarget = st.enemies[te._atkT];
+      }
+      te._atkT = null;
+    }
   }
 
   /* 保存当前无尽对局；slotId 为空则新建槽位 */
@@ -1347,7 +1415,7 @@
     rw.t = 2.5;
     /* 视觉反馈 */
     FX.ring(st.map.base.x, st.map.base.y, { r0: 20, r1: 300, life: 0.8, color: '#8fd4ff', width: 3 });
-    NB.UI.toast('已回溯至 ' + Math.round((st.rewind.snaps.length ? 0 : 0) + 0) + '第 ' + (st.waveNo || 0) + ' 波前', 'cy', 2000);
+    NB.UI.toast('已回溯至 第 ' + (st.waveNo || 0) + ' 波前', 'cy', 2000);
     NB.Audio.play('waveStart');
     NB.UI.hudSync();
     NB.UI.buildBarRender();
@@ -1540,17 +1608,50 @@
       G.selectTower(null);
     });
 
-    /* 触摸支持 */
-    canvas.addEventListener('touchstart', function (e) {
-      if (!e.touches.length) return;
+    /* ---------- 触摸支持 ----------
+       原先只有 touchstart：手机上选塔后看不到落点预览、也无法拖拽确认。
+       现在补 touchmove（移动光标做建造预览）+ touchend（抬手才真正建造，
+       避免误触；拖动超过阈值则视为取消）。 */
+    var touchMoved = false, touchStartX = 0, touchStartY = 0;
+    var TOUCH_SLOP = 12;   /* 像素：超过算拖动，不算点击 */
+
+    function touchTrack(e) {
+      if (!e.touches.length) return null;
       var t = e.touches[0];
       var r = canvas.getBoundingClientRect();
-      U.mouse.sx = t.clientX - r.left;
-      U.mouse.sy = t.clientY - r.top;
-      var tc = toCell(U.mouse.sx, U.mouse.sy);
+      var sx = t.clientX - r.left, sy = t.clientY - r.top;
+      var tc = toCell(sx, sy);
+      U.mouse.sx = sx; U.mouse.sy = sy;
       U.mouse.cx = tc.cx; U.mouse.cy = tc.cy;
       U.mouse.wx = tc.wx; U.mouse.wy = tc.wy;
       U.mouse.inside = true;
+      return tc;
+    }
+
+    canvas.addEventListener('touchstart', function (e) {
+      var tc = touchTrack(e);
+      if (!tc) return;
+      touchMoved = false;
+      touchStartX = U.mouse.sx; touchStartY = U.mouse.sy;
+      var st = G.state;
+      if (!st || st.status !== 'playing' || !P.inBounds(U.mouse.cx, U.mouse.cy)) return;
+      /* 按下即选中已有塔：手机上需要即时反馈（桌面是 hover 就能看） */
+      if (!G.buildType && !G.shovelMode) {
+        var tw0 = st.towerAt(U.mouse.cx, U.mouse.cy);
+        if (tw0) G.selectTower(tw0);
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', function (e) {
+      var tc = touchTrack(e);
+      if (!tc) return;
+      if (Math.abs(U.mouse.sx - touchStartX) > TOUCH_SLOP ||
+          Math.abs(U.mouse.sy - touchStartY) > TOUCH_SLOP) touchMoved = true;
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', function (e) {
+      /* 拖动过的不算点击，防止边拖动边误建 */
+      if (touchMoved) { touchMoved = false; return; }
       var st = G.state;
       if (!st || st.status !== 'playing' || !P.inBounds(U.mouse.cx, U.mouse.cy)) return;
       if (G.shovelMode) {
@@ -1560,11 +1661,19 @@
       }
       if (G.buildType) { G.tryBuild(U.mouse.cx, U.mouse.cy); return; }
       var tw = st.towerAt(U.mouse.cx, U.mouse.cy);
-      if (tw) G.selectTower(tw);
+      if (tw) G.selectTower(tw); else G.selectTower(null);
     }, { passive: true });
 
     /* 键盘 */
     w.addEventListener('keydown', function (e) {
+      /* 焦点在输入框/文本域/可编辑元素时一律放行：
+         否则存档命名框里打数字会触发选塔、打空格被 preventDefault 吞掉、
+         打字母会误触快捷键。saves.js 只挡了 Enter，这里做统一兜底。 */
+      var tg = e.target || e.srcElement;
+      if (tg) {
+        var tn = (tg.tagName || '').toUpperCase();
+        if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT' || tg.isContentEditable) return;
+      }
       var st = G.state;
       if (!st) return;
       var k = e.key.toLowerCase();

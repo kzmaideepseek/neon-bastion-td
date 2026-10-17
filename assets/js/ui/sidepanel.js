@@ -52,6 +52,10 @@
     var dmgLv2 = tw.totalDmgAt(tw.level + 1);
     var rateLv2 = tw.totalRateAt(tw.level + 1);
     var rangeLv2 = tw.totalRangeAt(tw.level + 1);
+    /* 全图射程塔（轨道轰炸）：射程那一行直接写「全图」，
+       写 46.00 格对玩家没有任何信息量，还会让人以为能继续涨。 */
+    var mapDiag = Math.sqrt(C.GRID_W * C.GRID_W + C.GRID_H * C.GRID_H);
+    var fullMap = (s.range / C.CELL) >= mapDiag - 0.5;
 
     var html =
       '<div class="sp-head">' +
@@ -63,7 +67,7 @@
       '<div class="sp-stats">' +
       statRow('伤害', fmtDmg(s.dmg), maxed ? null : fmtDmg(dmgLv2)) +
       statRow('射速', s.rate.toFixed(2) + '/s', maxed ? null : rateLv2.toFixed(2) + '/s') +
-      statRow('射程', (s.range / C.CELL).toFixed(2), maxed ? null : (rangeLv2).toFixed(2)) +
+      statRow('射程', fullMap ? '全图' : (s.range / C.CELL).toFixed(2), maxed || fullMap ? null : rangeLv2.toFixed(2)) +
       (s.armorPen ? statRow('破甲', Math.round(s.armorPen * 100) + '%', null) : '') +
       (s.slow ? statRow('减速', Math.round(s.slow * 100) + '%', null) : '') +
       (s.pull ? statRow('拖回力', '-' + s.pull.toFixed(0) + ' px/s', null) : '') +

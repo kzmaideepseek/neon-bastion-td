@@ -44,17 +44,28 @@ python -m http.server 8000
 
 ## 结构
 
-单层扁平结构，共 22 个源文件，便于直接托管：
+按职责分子目录，共 22 个源文件 + 1 个样式表：
 
 ```
-index.html    入口
-main.css      样式
-main.js       启动引导
-utils.js  storage.js  audio.js         基础设施
-config.js  path.js  particles.js       配置与地图
-entities.js  waves.js  render.js  game.js  核心逻辑
-hud.js  sidepanel.js  buildbar.js  shop.js  levels.js
-progress.js  settings.js  setup.js  saves.js  router.js   界面
+index.html                  入口（script 顺序 = 依赖顺序，勿随意调整）
+assets/css/main.css         设计系统：金属装甲 / 切角面板 / 警示斜纹
+assets/js/main.js           启动引导
+assets/js/core/             基础设施与配置
+  utils.js                  数学 / DOM / 色彩 / 渐变缓存
+  storage.js                localStorage 存档与深合并迁移
+  audio.js                  WebAudio 合成引擎（音效 + 音乐调度）
+  config.js                 25 炮塔 / 17 敌人 / 关卡 / 天赋 / 成就 / 无尽参数
+  path.js                   48 地图变体 + 路径插值 + 种子化场景装饰
+  router.js                 界面路由
+assets/js/entity/           实体与波次
+  particles.js              池化粒子系统（上限 1400，三档画质）
+  entities.js               敌人 / 炮塔 / 弹丸实体与行为
+  waves.js                  波次生成器
+assets/js/render/render.js  Canvas 渲染（甲板 / 炮塔 / 特效 / HUD 覆盖层）
+assets/js/game/game.js      主循环、状态机、输入、结算、自适应画质
+assets/js/ui/               界面
+  hud.js  sidepanel.js  buildbar.js  shop.js  levels.js
+  progress.js  settings.js  setup.js  saves.js
 ```
 
 更详细说明见 [`使用说明.md`](使用说明.md)。

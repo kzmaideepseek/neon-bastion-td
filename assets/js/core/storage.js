@@ -97,10 +97,29 @@
     try { return btoa(unescape(encodeURIComponent(JSON.stringify(S.get())))); }
     catch (e) { return ''; }
   };
+  /* 结构校验：只认「对象 + settings 是对象」的存档，
+     且关键字段类型必须正确 —— 否则 merge 会把畸形值带进存档，
+     之后每次读取都在半坏状态上运行（缺字段能靠默认值补，类型错不会）。 */
+  function validSave(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    if (!obj.settings || typeof obj.settings !== 'object' || Array.isArray(obj.settings)) return false;
+    var arrKeys = ['levels', 'talents', 'achievements', 'shop'];
+    for (var i = 0; i < arrKeys.length; i++) {
+      var v = obj[arrKeys[i]];
+      if (v != null && !Array.isArray(v) && typeof v !== 'object') return false;
+    }
+    var numKeys = ['stars', 'gold', 'version'];
+    for (var j = 0; j < numKeys.length; j++) {
+      var n = obj[numKeys[j]];
+      if (n != null && typeof n !== 'number') return false;
+    }
+    return true;
+  }
+
   S.importText = function (txt) {
     try {
       var obj = JSON.parse(decodeURIComponent(escape(atob(txt.trim()))));
-      if (!obj || typeof obj !== 'object' || !obj.settings) return false;
+      if (!validSave(obj)) return false;
       data = merge(S.defaults(), obj);
       S.save(true);
       return true;
@@ -184,6 +203,8 @@
      ============================================================ */
   var ENDLESS_KEY = 'neon_bastion_endless_v1';
   var endlessData = null;
+  var endlessDirty = false;      /* 有变更才写，避免无谓 IO */
+  var ENDLESS_FLUSH_MS = 10000;  /* 兜底落盘间隔：崩溃最多丢 10 秒的槽位元数据 */
 
   function endlessDefaults() {
     return { ver: 1, slots: [], best: { wave: 0, kills: 0 } };
@@ -201,9 +222,15 @@
   }
   function endlessFlush() {
     if (!endlessData) return false;
+    endlessDirty = false;
     try { w.localStorage.setItem(ENDLESS_KEY, JSON.stringify(endlessData)); return true; }
     catch (e) { console.warn('[Save] 无尽存档写入失败', e); return false; }
   }
+  /* 兜底：beforeunload/visibilitychange 之外，崩溃或强杀进程不会触发这两者。
+     低频（10s）检查脏标记并落盘，槽位新建/重命名/删除/最高纪录就不会丢。 */
+  setInterval(function () {
+    if (endlessDirty) endlessFlush();
+  }, ENDLESS_FLUSH_MS);
 
   /* 槽位列表（按更新时间倒序） */
   S.endlessSlots = function () {
@@ -230,6 +257,7 @@
       data: data
     };
     d.slots.push(slot);
+    endlessDirty = true;
     endlessFlush();
     return slot.id;
   };
@@ -247,6 +275,7 @@
         s.waveNo = data.waveNo || 0;
         s.kills = data.kills || 0;
         s.data = data;
+        endlessDirty = true;
         endlessFlush();
         return true;
       }
@@ -261,6 +290,7 @@
       if (d.slots[i].id === id) {
         d.slots[i].name = String(name || '').trim().slice(0, 24) || '无尽存档';
         d.slots[i].updated = Date.now();
+        endlessDirty = true;
         endlessFlush();
         return true;
       }
@@ -274,6 +304,7 @@
     for (var i = 0; i < d.slots.length; i++) {
       if (d.slots[i].id === id) {
         d.slots.splice(i, 1);
+        endlessDirty = true;
         endlessFlush();
         return true;
       }
@@ -288,6 +319,7 @@
     var cur = d.best || { wave: 0, kills: 0 };
     if ((b.wave || 0) > (cur.wave || 0) || ((b.wave || 0) === (cur.wave || 0) && (b.kills || 0) > (cur.kills || 0))) {
       d.best = { wave: b.wave || 0, kills: b.kills || 0 };
+      endlessDirty = true;
       endlessFlush();
     }
   };

@@ -24,23 +24,36 @@
     return {
       on: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, ax: 0, ay: 0,
       life: 0, max: 1, size: 2, size2: 0, color: '#fff', color2: null,
-      rot: 0, vr: 0, drag: 1, glow: 0, alpha: 1, add: true, txt: ''
+      rot: 0, vr: 0, drag: 1, glow: 0, alpha: 1, add: true, txt: '',
+      /* 预生成的确定性形状数据：电弧抖动偏移 / 裂纹各分支长度。
+         在 mk() 里占位是为了让池中 1400 个对象形状完全一致（V8 隐藏类稳定），
+         运行时只赋值不新增字段。 */
+      jagOff: null, crackLen: null
     };
   }
   for (var i = 0; i < MAX; i++) pool.push(mk());
 
   var cursor = 0;
   function alloc() {
-    /* 超过软上限：先把最老的一个粒子回收掉，保证新粒子总能入场，
-       同时把稳态粒子数压在软上限附近 */
+    /* 超过软上限：回收一个粒子，保证新粒子总能入场，
+       同时把稳态粒子数压在软上限附近。
+       早期实现从游标往后找第一个活跃粒子回收，等于「最古老的先死」——
+       RING/BEAM/LINE/SHOCK/CRACK/TRACER 这类长生命特效会被成片误杀。
+       改为在游标附近扫一小段，优先回收剩余寿命比例最小的（快结束的），
+       长生命特效因此能活到自然消亡。扫描范围固定 64，开销可忽略。 */
     if (live >= softCap()) {
-      for (var q = 0; q < MAX; q++) {
+      var bestQ = -1, bestRatio = 2;
+      for (var q = 0; q < 64; q++) {
         var qq = (cursor + 1 + q) % MAX;
-        if (pool[qq].on) {
-          pool[qq].on = false;
-          live--;
-          break;
-        }
+        var qp = pool[qq];
+        if (!qp.on) continue;
+        var ratio = qp.max > 0 ? (qp.life / qp.max) : 0;
+        if (ratio < bestRatio) { bestRatio = ratio; bestQ = qq; if (ratio <= 0) break; }
+      }
+      if (bestQ >= 0) {
+        pool[bestQ].on = false;
+        pool[bestQ].jagOff = null; pool[bestQ].crackLen = null;
+        live--;
       }
     }
     for (var k = 0; k < MAX; k++) {
@@ -53,6 +66,21 @@
   }
 
   var KIND = { SPARK: 0, SMOKE: 1, RING: 2, SHARD: 3, GLOW: 4, TEXT: 5, LINE: 6, BEAM: 7, DEBRIS: 8, TRACER: 9, SHOCK: 10, CRACK: 11 };
+
+  /* ---------- 确定性形状数据（创建时随机一次，存活期内不变） ----------
+     早期实现在渲染循环里调 Math.random() 决定电弧偏移和裂纹长度，
+     后果是同一条电弧 / 同一道裂纹每一帧都换一个形状：
+     视觉上是高频噪点闪烁，而不是"稳定的电弧"和"裂开的纹路"。 */
+  function mkJagOff(segs) {
+    var a = new Array(segs - 1);
+    for (var i = 0; i < segs - 1; i++) a[i] = (Math.random() - 0.5) * 2;
+    return a;
+  }
+  function mkCrackLens(n) {
+    var a = new Array(n);
+    for (var i = 0; i < n; i++) a[i] = 0.6 + Math.random() * 0.8;
+    return a;
+  }
 
   /* 粒子数量缩放：至少 1 个，避免 n 被压成 0 导致特效消失 */
   function scale() { return qScale; }
@@ -216,6 +244,8 @@
     p.drag = 1; p.glow = 1; p.add = true;
     p.rot = opt.jag || 0;
     p.size2 = opt.jag ? (opt.seg || 7) : 0;
+    /* 电弧抖动形状创建时定死（mkJagOff 返回 [-1,1] 的固定系数） */
+    p.jagOff = opt.jag ? mkJagOff(p.size2 | 0) : null;
     p.alpha = opt.alpha == null ? 1 : opt.alpha;
   };
 
@@ -296,6 +326,8 @@
     p.size = opt.len || 12;
     p.size2 = opt.n || 5;
     p.rot = Math.random() * U.TAU;
+    /* 各分支长度创建时定死，避免每帧重算让裂纹持续抽动 */
+    p.crackLen = mkCrackLens(p.size2 | 0);
     p.color = opt.color || '#ffffff';
     p.color2 = opt.color2 || '#ffffff';
     p.drag = 1; p.glow = 1; p.add = true;
@@ -421,8 +453,9 @@
     FX.glow(x, y, { size: 16, life: 0.1, color: color || '#b6f4ff' });
   };
 
+  /* 回收时清掉形状数据引用，避免已淘汰粒子被数组长期持有 */
   FX.clearAll = function () {
-    for (var i = 0; i < MAX; i++) pool[i].on = false;
+    for (var i = 0; i < MAX; i++) { pool[i].on = false; pool[i].jagOff = null; pool[i].crackLen = null; }
     live = 0; cursor = 0;
   };
 
@@ -567,7 +600,7 @@
         var cn = p.size2 | 0;
         for (var cr = 0; cr < cn; cr++) {
           var ca = (cr / cn) * U.TAU + p.rot;
-          var len = p.size * (0.6 + Math.random() * 0.8);
+          var len = p.size * (p.crackLen ? p.crackLen[cr] : 1);
           ctx.moveTo(p.x, p.y);
           ctx.lineTo(p.x + Math.cos(ca) * len, p.y + Math.sin(ca) * len);
         }
@@ -587,7 +620,9 @@
             var mx = x1 + (x2 - x1) * tt, my = y1 + (y2 - y1) * tt;
             var nx = -(y2 - y1), ny = (x2 - x1);
             var nl = Math.sqrt(nx * nx + ny * ny) || 1;
-            var off = U.rnd ? 0 : (Math.random() - 0.5) * p.rot * 2 * Math.sin(tt * Math.PI);
+            /* 幅度 = rot（创建时传入的抖动强度）× 固定系数 × 中凸包络，
+               整条电弧的形状在存活期内保持不变 */
+            var off = (p.jagOff ? p.jagOff[k - 1] : 0) * p.rot * Math.sin(tt * Math.PI);
             ctx.lineTo(mx + nx / nl * off, my + ny / nl * off);
           }
           ctx.lineTo(x2, y2); ctx.stroke();
@@ -613,8 +648,5 @@
     ctx.restore();
     ctx.globalAlpha = 1;
   };
-
-  /* U.rnd 不存在时的兜底（避免每帧调用未定义函数） */
-  U.rnd = 0;
 
 })(window);

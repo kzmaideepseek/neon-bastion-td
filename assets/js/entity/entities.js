@@ -628,12 +628,17 @@
   E.Tower.prototype.stats = function () {
     var bo = this._bonus || null;
     var flyPen = (this.flying && this.moving) ? 1 : 0;
-    var sig = this.level + '|' + (bo ? (bo.dmg + ',' + bo.rate) : '0') + '|' + flyPen;
+    /* 无 mods 的 state（测试/半初始化路径）用中性值，避免抛错 */
+    var m = this.state.mods || { dmg: 1, rate: 1, range: 1, gold: 1, bounty: 1 };
+    /* 签名必须覆盖全部影响结果的输入：等级 / 天赋系数 / 信标加成 / 飞行移动。
+       早期签名漏了 mods —— 一旦 state.mods 被替换（读档、天赋刷新），
+       _sig 字符串不变，塔会继续沿用一整套过期属性。 */
+    var sig = this.level + '|' + m.dmg + ',' + m.rate + ',' + m.range + '|' +
+      (bo ? (bo.dmg + ',' + bo.rate) : '0') + '|' + flyPen;
     if (this._sig === sig && this._sc) return this._sc;
 
     var d = this.def, g = this.level - 1;
     var b = d.base, gr = d.growth;
-    var m = this.state.mods;
     var bd = bo ? (1 + bo.dmg) : 1;
     var br = bo ? (1 + bo.rate) : 1;
 

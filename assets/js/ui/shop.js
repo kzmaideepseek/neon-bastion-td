@@ -45,6 +45,9 @@
       var d = C.TOWERS[id];
       var owned = Save.hasTower(id);
       var afford = cores >= d.unlockCost;
+      /* 全图射程塔（轨道轰炸）在商店里也写「全图」，别露一个 46.0 出来 */
+      var shopDiag = Math.sqrt(C.GRID_W * C.GRID_W + C.GRID_H * C.GRID_H);
+      var shopFull = d.base.range >= shopDiag - 0.5;
 
       var tag = owned ? '<span class="sc-tag t3">已授权</span>'
         : (d.free ? '<span class="sc-tag t1">初始装备</span>'
@@ -59,7 +62,7 @@
         '<div class="sc-stats">' +
         '<span>伤害 <b>' + d.base.dmg + '</b></span>' +
         '<span>射速 <b>' + d.base.rate.toFixed(2) + '/s</b></span>' +
-        '<span>射程 <b>' + d.base.range.toFixed(1) + '</b></span>' +
+        '<span>射程 <b>' + (shopFull ? '全图' : d.base.range.toFixed(1)) + '</b></span>' +
         '<span>造价 <b>' + C.TOWER_COST[id] + '⬢</b></span>' +
         '<span>上限 <b>LV' + d.maxLevel + '</b></span>' +
         '</div>' +

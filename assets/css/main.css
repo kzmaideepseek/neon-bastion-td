@@ -1208,3 +1208,75 @@ input[type=range]::-webkit-slider-thumb{
 }
 .pn-x:hover{background:rgba(140,210,240,.26);color:#eaf6ff;}
 .perf-notice.pinned .pn-x{background:rgba(255,140,170,.2);border-color:rgba(255,140,170,.45);color:#ffd6e0;}
+
+/* ============================================================
+   炮塔详情侧栏（#side-panel）
+   —— 这些 .sp-* 规则此前整个缺失：CSS 里只剩一条媒体查询里的
+      .side-panel{width:224px}，没有任何定位与排版规则。
+      后果是右键查看炮塔时，侧栏以「无样式 div」的身份出现在
+      #stage-wrap 的 flex 流里，把画布挤到左边、文字全部裸排。
+      这里补齐全套，定位为右侧浮层（#stage-wrap 已是 relative）。
+   ============================================================ */
+#side-panel{
+  position:absolute;top:0;right:0;bottom:0;width:224px;z-index:30;
+  display:flex;flex-direction:column;gap:9px;
+  padding:11px 12px 13px;overflow-y:auto;overflow-x:hidden;
+  background:linear-gradient(180deg,rgba(23,31,40,.975),rgba(9,14,19,.975));
+  border-left:2px solid rgba(0,0,0,.75);
+  box-shadow:inset 1px 0 0 rgba(170,205,235,.10),-6px 0 22px rgba(0,0,0,.55);
+  scrollbar-width:thin;scrollbar-color:#2a3a48 transparent;
+  animation:spIn .2s var(--ease);
+}
+#side-panel::-webkit-scrollbar{width:6px;}
+#side-panel::-webkit-scrollbar-thumb{background:#2a3a48;}
+#side-panel::-webkit-scrollbar-track{background:transparent;}
+@keyframes spIn{from{opacity:0;transform:translateX(14px);}to{opacity:1;transform:none;}}
+
+.sp-head{display:flex;align-items:center;gap:9px;flex:0 0 auto;}
+.sp-icon{
+  flex:0 0 auto;width:36px;height:36px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;background:rgba(0,0,0,.42);
+  clip-path:polygon(0 0,calc(100% - 7px) 0,100% 7px,100% 100%,7px 100%,0 calc(100% - 7px));
+}
+.sp-name{font-size:13.5px;font-weight:700;letter-spacing:.04em;color:#dcebf8;line-height:1.25;}
+.sp-lv{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--txt-mute);margin-top:2px;}
+
+.sp-stats{flex:0 0 auto;display:flex;flex-direction:column;}
+.sp-stat{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+  padding:5px 2px;border-bottom:1px solid rgba(120,155,190,.10);
+  font-size:11.5px;
+}
+.sp-stat:last-child{border-bottom:none;}
+.sp-stat .k{color:var(--txt-dim);letter-spacing:.03em;}
+.sp-stat .v{font-family:var(--mono);font-weight:700;color:#e6f2fb;white-space:nowrap;}
+.sp-stat .up{color:var(--tox);font-size:10px;margin-left:5px;}
+
+.sp-target{flex:0 0 auto;}
+.sp-target-lb{font-size:10px;letter-spacing:.1em;color:var(--txt-mute);margin-bottom:5px;}
+.sp-tgts{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;}
+.sp-tg{
+  padding:5px 0;text-align:center;cursor:pointer;
+  font-size:10.5px;font-weight:600;color:#a9bdd2;
+  background:rgba(120,155,190,.10);border:1px solid rgba(120,155,190,.18);
+  border-radius:3px;transition:background .14s,color .14s,border-color .14s;
+}
+.sp-tg:hover{background:rgba(120,180,220,.2);color:#e2f2fc;}
+.sp-tg.on{
+  color:#04121a;background:linear-gradient(180deg,#8fe3ff,#3fb8e0);
+  border-color:rgba(140,225,255,.7);font-weight:700;
+}
+
+.sp-kills{
+  flex:0 0 auto;font-family:var(--mono);font-size:10px;line-height:1.6;
+  color:var(--txt-mute);word-break:break-word;
+}
+
+.sp-acts{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;margin-top:auto;}
+.sp-acts .btn{width:100%;justify-content:center;}
+.sp-up .pc{font-family:var(--mono);color:var(--volt);margin-left:6px;}
+.sp-note{
+  flex:0 0 auto;font-size:9.5px;line-height:1.5;letter-spacing:.03em;
+  color:var(--txt-mute);text-align:center;
+}

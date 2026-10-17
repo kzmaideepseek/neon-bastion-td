@@ -180,7 +180,10 @@
       kind: 'orbital',
       desc: '呼叫全图轨道打击：850 伤害 + 范围溅射，但落点有 1.4 秒延迟、8.3 秒才能打一发，且完全打不中移动快的目标——需要预判。',
       unlockCost: 900, free: false,
-      base: { dmg: 850, rate: 0.12, range: 20, speed: 0, pierce: 0, blast: 2.3, blastDmg: 0.55, delay: 1.4 },
+      /* range 46 格 > 36x24 地图对角线 43.3 格 => 真正的全图射程。
+         早期写成 20 格却配「全图」文案，实际只能打半个战场，
+         与「轨道平台」的定位和玩家预期都不符。 */
+      base: { dmg: 850, rate: 0.12, range: 46, speed: 0, pierce: 0, blast: 2.3, blastDmg: 0.55, delay: 1.4 },
       growth: { dmg: 1.165, rate: 1.025, range: 1, blast: 1.03, delay: 0.985 },
       maxLevel: 12,
       sfx: 'shootOrbital'
@@ -407,6 +410,12 @@
       attacker: true, atkDmg: 22, atkRange: 1.75, atkCd: 1.25
     }
   };
+  /* 图鉴 / 波次构成的展示顺序（14 项）。
+     注意：breacher / sapper / droner 这三个虽然也在 C.ENEMIES 里注册了，
+     但不进这个列表 —— 它们是 RAIDERS 突袭小队的专用兵种，
+     由 waves.js 的突袭逻辑直接按名取用，不走常规波次轮换。
+     render.js 的 drawMech 里有它们专属的造型分支。
+     所以「ENEMY_ORDER 比 ENEMIES 少三项」不是漏注册，是有意为之。 */
   C.ENEMY_ORDER = ['grunt', 'runner', 'swarm', 'drone', 'lancer', 'tank', 'phantom', 'breaker', 'warden', 'mender', 'juggernaut', 'overlord', 'saber', 'ripper'];
 
   /* ============================================================
