@@ -10,7 +10,7 @@
   var G = NB.Game = {};
 
   var canvas = null, wrap = null, ctx = null;
-  var raf = 0, lastT = 0, acc = 0, lastRafTs = 0;
+  var raf = 0, lastT = 0, acc = 0;
   var STEP = 1 / 60;
 
   G.state = null;
@@ -41,7 +41,6 @@
           { endless:true, save: slotId }                  无尽·读取存档
      ============================================================ */
   G.start = function (levelId, cfg) {
-    NB.Perf && NB.Perf.reset();
     cfg = cfg || {};
     var endless = !!cfg.endless;
     var lv, variant, diff, slot = null, bindSlot = null;
@@ -318,167 +317,6 @@
   G.endlessLevel = endlessLevel;
 
   /* ============================================================
-     帧率监测 + 自适应画质
-     ------------------------------------------------------------
-     测量：取 1 秒窗口内帧间隔的**中位数**（不是平均值）。
-     中位数对 GC 停顿、切换标签页、系统调度抖动天然免疫 ——
-     早期版本用平均值，一个 500ms 卡顿就会把读数拉到 2 FPS，
-     且由于窗口立即结算，误差会持续污染后续读数。
-
-     降档顺序（从便宜到贵，先砍最不影响观感的）：
-       0 high  粒子 100% / 动态装饰全开 / 装饰性叠加全开
-       1 med   粒子 55%  / 动态装饰全开 / 关装饰性叠加（选中环、尾迹等）
-       2 low   粒子 30%  / 动态装饰减半 / 关装饰性叠加 + 关辉光/光束贴花
-     升级需要持续更高帧率，且带迟滞，避免在临界点反复横跳。
-     ============================================================ */
-  var Perf = NB.Perf = {
-    fps: 60, ms: 16.7, tier: 0, auto: true,
-    samples: [],          /* 当前窗口的帧间隔样本（ms） */
-    _warm: 0,             /* 预热剩余（ms），预热期内不统计 */
-    _since: 0,            /* 距上次结算的累计时长 */
-    _low: 0, _high: 0, _cool: 0,
-    _disp: 60,            /* 显示用缓动值 */
-    _lastRaw: 0,
-    units: 0, particles: 0,
-    _outliers: 0        /* 本局被剔除的异常帧计数（诊断用） */
-  };
-  /* 四档：high / med / low / minimal
-     minimal 不再降粒子（同 low 的 0.3），而是让渲染器跳过逐塔武器美术 ——
-     剖析显示那是 120 塔场景下的真正大头。 */
-  var TIERS = ['high', 'med', 'low', 'minimal'];
-  var MAX_TIER = 3;
-  var WARMUP_MS = 1200;      /* 忽略开局 1.2 秒（地图构建 / 首帧着色器编译） */
-  var WIN_MS = 1000;         /* 统计窗口 1 秒 */
-  var WIN_MIN_FRAMES = 12;   /* 中位数有意义所需的最小样本数 */
-  var WIN_MIN_FRAMES_SLOW = 8;  /* 已经攒够 8 帧就允许按时间结算 */
-  var FRAME_MIN = 0.5;       /* 小于 0.5ms 的间隔是异常值（同一时间戳），丢弃 */
-  var FRAME_MAX = 400;       /* 大于 400ms 视为卡死/切后台，丢弃并重置窗口 */
-
-  /* 各档具体砍了什么，用于给玩家的悬浮提示 */
-  /* 各档简化内容由 UI 常驻说明展示，此处不再重复维护文案 */
-
-  function applyTier(t, reason) {
-    t = Math.max(0, Math.min(MAX_TIER, t | 0));
-    if (t === Perf.tier) { applyTierState(t); return false; }
-    Perf.tier = t;
-    applyTierState(t);
-    /* 画质说明由 UI 侧常驻显示（由 tier 状态驱动），此处不再弹一次性 toast。
-       reason 保留用于将来区分自动降档 / 手动切换。 */
-    void reason;
-    NB.UI.perfNotice && NB.UI.perfNotice();
-    return true;
-  }
-  function applyTierState(t) {
-    R.setQuality(TIERS[t]);   /* render 内部按 tier 决定装饰动画频率 */
-    NB.UI.fpsTick && NB.UI.fpsTick(Perf);
-  }
-  Perf.setTier = applyTier;
-  Perf.setAuto = function (v) {
-    Perf.auto = !!v;
-    Perf._cool = 1.2;
-    if (!v) NB.UI.fpsTick && NB.UI.fpsTick(Perf);
-  };
-  Perf.reset = function () {
-    Perf.samples.length = 0;
-    Perf._warm = WARMUP_MS;
-    Perf._since = 0; Perf._low = 0; Perf._high = 0; Perf._cool = 1.2;
-    Perf.fps = 60; Perf.ms = 16.7; Perf._disp = 60;
-    Perf._outliers = 0;
-  };
-
-  function median(list) {
-    var a = list.slice().sort(function (x, y) { return x - y; });
-    var n = a.length;
-    if (!n) return 0;
-    return (n & 1) ? a[(n - 1) >> 1] : (a[n / 2 - 1] + a[n / 2]) * 0.5;
-  }
-
-  function perfSample(rawMs) {
-    /* --- 预热期：不统计 --- */
-    if (Perf._warm > 0) {
-      Perf._warm -= rawMs;
-      if (Perf._warm > 0) return;
-      rawMs = -Perf._warm;         /* 预热剩余计入本窗起点，避免空窗 */
-      Perf._warm = 0;
-    }
-
-    /* --- 剔除异常帧 --- */
-    if (rawMs < FRAME_MIN) return;                       /* 时间戳重复 */
-    if (rawMs > FRAME_MAX) {
-      /* 巨帧（GC / 卡死 / 调度抖动）：**只跳过这一个样本**。
-         早期实现在这里清空整个窗口，结果周期性尖峰会让窗口永远攒不满
-         1000ms，fps 读数冻结在旧值不再更新（真机 30fps 却被报成 60）。
-         中位数天然对离群值免疫，所以剔除样本即可，无需重置窗口。
-         真正的标签页切换由 visibilitychange 单独重置（见 perfSuspend）。 */
-      Perf._outliers++;
-      return;
-    }
-
-    Perf.samples.push(rawMs);
-    Perf._since += rawMs;
-    Perf._lastRaw = rawMs;
-
-    /* --- 结算：时间满 1 秒，且样本数足够让中位数有意义 ---
-       真机很慢时（如 12fps）20 帧要等 1.6 秒才凑齐，会拖慢响应；
-       所以放宽为「满 8 帧即可按时间结算」，兼顾准确与及时。 */
-    var need = Perf._since >= WIN_MS * 2 ? WIN_MIN_FRAMES : WIN_MIN_FRAMES_SLOW;
-    if (Perf._since < WIN_MS || Perf.samples.length < need) return;
-
-    var med = median(Perf.samples);
-    Perf.ms = med;
-    Perf.fps = med > 0.01 ? Math.round(1000 / med) : 0;
-    Perf.samples.length = 0;
-    Perf._since = 0;
-
-    /* --- 显示缓动：数字不跳变 --- */
-    /* 显示缓动：指数逼近，但按帧率差自适应步长 ——
-       差距大时收敛快（跟随真实掉帧），差距小时收敛慢（防止数字乱跳）。 */
-    var gap = Perf.fps - Perf._disp;
-    var k = (gap < 0 ? 0.62 : 0.5);      /* 掉帧比回升更敏感，掉档要及时可见 */
-    Perf._disp += gap * k;
-    if (Math.abs(gap) < 0.6) Perf._disp = Perf.fps;
-
-    if (!Perf.auto) { NB.UI.fpsTick && NB.UI.fpsTick(Perf); return; }
-    if (Perf._cool > 0) { Perf._cool -= 1; NB.UI.fpsTick && NB.UI.fpsTick(Perf); return; }
-
-    /* --- 自适应：阈值下调到 38（中位数比平均值稳，可以更早动手） --- */
-    if (Perf.fps < 38 && Perf.tier < MAX_TIER) {
-      Perf._low++; Perf._high = 0;
-      if (Perf._low >= 2) {          /* 连续 2 秒低于 38fps 才降档 */
-        Perf._low = 0;
-        applyTier(Perf.tier + 1, 'down');
-        Perf._cool = 3;
-      }
-    } else if (Perf.fps > 56 && Perf.tier > 0) {
-      Perf._high++; Perf._low = 0;
-      if (Perf._high >= 6) {          /* 连续 6 秒高于 56fps 才升档 */
-        Perf._high = 0;
-        applyTier(Perf.tier - 1);
-        Perf._cool = 5;
-      }
-    } else {
-      Perf._low = 0; Perf._high = 0;
-    }
-    NB.UI.fpsTick && NB.UI.fpsTick(Perf);
-  }
-
-  /* 测试钩子：直接喂帧间隔，走与 rAF 主循环完全相同的采样路径 */
-  Perf.feed = function (ms) { perfSample(ms); };
-
-  /* 切换标签页 / 窗口时丢弃当前窗口，避免回来瞬间误判 */
-  function perfSuspend() {
-    Perf.samples.length = 0;
-    Perf._since = 0;
-    Perf._low = 0; Perf._high = 0;
-    /* 切回来后前几帧往往还在补偿布局/重绘，跳过少量即可，不要太长 */
-    Perf._warm = 200;
-    Perf._disp = 0;      /* 下一帧立即重算显示值，不沿用切换前的读数 */
-  }
-  w.addEventListener('visibilitychange', function () { if (document.hidden) perfSuspend(); else perfSuspend(); });
-  w.addEventListener('blur', perfSuspend);
-  w.addEventListener('focus', perfSuspend);
-
-  /* ============================================================
      主循环
      ============================================================ */
   function loop(ts) {
@@ -489,10 +327,6 @@
 
     NB.Audio.tickMusic(dt);
 
-    if (!lastRafTs) lastRafTs = ts;
-    var rawMs = ts - lastRafTs;
-    lastRafTs = ts;
-    perfSample(rawMs);
 
     var st = G.state;
     if (!st) return;

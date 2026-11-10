@@ -15,10 +15,6 @@
     el.livesBar = U.$('#hudLivesBar');
     el.gold = U.$('#hudGold');
     el.waveTxt = U.$('#hudWaveTxt');
-    el.fpsNum = U.$('#fpsNum');
-    el.fpsQ = U.$('#fpsQ');
-    el.fpsBox = U.$('#fpsBox');
-    el.perfNotice = U.$('#perfNotice');
     el.levelNo = U.$('#hudLevelNo');
     el.levelName = U.$('#hudLevelName');
     el.diff = U.$('#hudDiff');
@@ -143,110 +139,6 @@
     NB.Audio.play('waveClear');
   };
 
-  /* ============================================================
-     帧率 / 画质指示
-     ============================================================ */
-  var QNAME = ['高', '中', '低', '简'];
-  var lastQ = -1, lastFps = -1;
-
-  UI.fpsTick = function (perf) {
-    if (!el.fpsNum || !perf) return;
-    /* 用缓动值显示，避免数字逐帧跳动造成的视觉噪声与误读 */
-    var shown = Math.round(perf._disp != null ? perf._disp : perf.fps);
-    if (shown !== lastFps) {
-      lastFps = shown;
-      el.fpsNum.textContent = shown;
-      var c = shown >= 55 ? 'ok' : (shown >= 40 ? 'warn' : 'bad');
-      el.fpsNum.className = 'fps-num ' + c;
-    }
-    if (perf.tier !== lastQ || (el.fpsQ && el.fpsQ.dataset.auto !== String(perf.auto))) {
-      lastQ = perf.tier;
-      if (el.fpsQ) {
-        el.fpsQ.dataset.auto = String(perf.auto);
-        el.fpsQ.textContent = (perf.auto ? '自动·' : '手动·') + QNAME[perf.tier] || '';
-      }
-    }
-    if (el.fpsBox) {
-      el.fpsBox.dataset.tier = String(perf.tier);
-      el.fpsBox.dataset.auto = String(perf.auto);
-    }
-    /* 画质一有变化就同步常驻说明（不靠计时器，帧率回升即自动消失） */
-    paintNotice(false);
-  };
-
-  /* ============================================================
-     性能提示（自动降特效时告知玩家做了什么）
-     —— 刻意做得安静：贴在 FPS 框下方，自动消失，不抢焦点
-     ============================================================ */
-  var TIER_TAG = ['', '中', '低', '简'];
-  /* ============================================================
-     画质说明（常驻）
-     ------------------------------------------------------------
-     只要画质不是「高」，这块就一直挂在 FPS 旁边，告诉玩家
-     画面被简化了哪些部分 —— 直到帧率回升、画质回到「高」才消失。
-     不做成几秒就消失的 toast：塔的样子变了，玩家必须能随时知道原因。
-     ============================================================ */
-  var noticePinned = false;
-  var shownTier = -1;
-
-  /* 每档具体被简化了什么 —— 常驻展示用 */
-  var TIER_DETAIL = [
-    '',
-    '粒子密度与装饰光效已降低',
-    '粒子降至 30%，装饰动画与叠加光效关闭',
-    '炮塔简化为指向标记，全部装饰动画关闭'
-  ];
-
-  function paintNotice(force) {
-    if (!el.perfNotice) return;
-    var P = NB.Perf;
-    var tier = P ? P.tier : 0;
-    if (tier === shownTier && !force) return;
-    shownTier = tier;
-    if (tier === 0) {
-      el.perfNotice.classList.add('hidden');
-      return;
-    }
-    var auto = P.auto;
-    el.perfNotice.innerHTML =
-      '<i class="pn-tag">' + (TIER_TAG[tier] || '中') + '画质</i>' +
-      '<span class="pn-body">' +
-      '<b>为保帧率已简化</b>' + U.esc(TIER_DETAIL[tier] || '') +
-      '<br><span class="pn-sub">' +
-      (auto ? '帧率回升到 56 以上会自动恢复原样'
-            : '当前为手动锁定，恢复自动后可随时升降') +
-      '</span></span>' +
-      '<button class="pn-x" type="button" title="点击固定显示">固定</button>';
-    el.perfNotice.classList.remove('hidden');
-    el.perfNotice.classList.toggle('pinned', noticePinned);
-    var bx = el.perfNotice.querySelector('.pn-x');
-    if (bx) {
-      bx.textContent = noticePinned ? '取消固定' : '固定';
-      bx.addEventListener('click', function (e) {
-        e.stopPropagation();
-        noticePinned = !noticePinned;
-        paintNotice(true);
-      });
-    }
-  }
-  UI.perfNotice = function () { paintNotice(true); };
-
-      /* 点击循环：自动 -> 高 -> 中 -> 低 -> 自动 */
-  if (el.fpsBox) {
-    el.fpsBox.addEventListener('click', function () {
-      var P = NB.Perf;
-      if (!P) return;
-      if (P.auto) { P.setAuto(false); P.setTier(0); }
-      else if (P.tier === 0) { P.setTier(1); }
-      else if (P.tier === 1) { P.setTier(2); }
-      else if (P.tier === 2) { P.setTier(3); }
-      else { P.setAuto(true); }
-      P._cool = 3;
-      NB.Audio.play('uiClick');
-      paintNotice(true);
-      UI.fpsTick(P);
-    });
-  }
 
   /* ============================================================
      Toast
